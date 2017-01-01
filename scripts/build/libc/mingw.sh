@@ -55,10 +55,10 @@ do_libc_start_files() {
         "${sdk_opts[@]}"
 
     CT_DoLog EXTRA "Compile Headers"
-    CT_DoExecLog ALL ${make}
+    CT_DoExecLog ALL make
 
     CT_DoLog EXTRA "Installing Headers"
-    CT_DoExecLog ALL ${make} install DESTDIR=${CT_SYSROOT_DIR}
+    CT_DoExecLog ALL make install DESTDIR=${CT_SYSROOT_DIR}
 
     CT_Popd
 
@@ -104,14 +104,41 @@ do_libc() {
     # parallel build. See https://github.com/crosstool-ng/crosstool-ng/issues/246
     # Do not pass ${JOBSFLAGS} - build serially.
     CT_DoLog EXTRA "Building mingw-w64-crt"
-    CT_DoExecLog ALL ${make}
+    CT_DoExecLog ALL make
 
     CT_DoLog EXTRA "Installing mingw-w64-crt"
-    CT_DoExecLog ALL ${make} install DESTDIR=${CT_SYSROOT_DIR}
+    CT_DoExecLog ALL make install DESTDIR=${CT_SYSROOT_DIR}
 
     CT_EndStep
+
+    if [ "${CT_THREADS}" = "posix" ]; then
+	    do_pthreads
+    fi
 }
 
 do_libc_post_cc() {
     :
+}
+
+do_pthreads() {
+    CT_DoStep INFO "Building mingw-w64-winpthreads files"
+
+    CT_DoLog EXTRA "Configuring mingw-w64-winpthreads"
+
+    CT_mkdir_pushd "${CT_BUILD_DIR}/build-mingw-w64-winpthreads"
+
+    CT_DoExecLog CFG                                                        \
+    "${CT_SRC_DIR}/mingw-w64-${CT_WINAPI_VERSION_DOWNLOADED}/mingw-w64-libraries/winpthreads/configure" \
+        --with-sysroot=${CT_SYSROOT_DIR}                                              \
+        --prefix=${MINGW_INSTALL_PREFIX}                                              \
+        --build=${CT_BUILD}                                                           \
+        --host=${CT_TARGET}                                                           \
+
+    CT_DoLog EXTRA "Building mingw-w64-winpthreads"
+    CT_DoExecLog ALL make ${JOBSFLAGS}
+
+    CT_DoLog EXTRA "Installing mingw-w64-winpthreads"
+    CT_DoExecLog ALL make install DESTDIR=${CT_SYSROOT_DIR}
+
+    CT_EndStep
 }

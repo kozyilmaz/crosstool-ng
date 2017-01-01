@@ -12,10 +12,10 @@ do_debug_gdb_get() {
     else
         # Account for the Linaro versioning
         linaro_version="$( echo "${CT_GDB_VERSION}"      \
-                           |${sed} -r -e 's/^linaro-//;'   \
+                           |sed -r -e 's/^linaro-//;'   \
                          )"
         linaro_series="$( echo "${linaro_version}"      \
-                          |${sed} -r -e 's/-.*//;'         \
+                          |sed -r -e 's/-.*//;'         \
                         )"
 
         if [ x"${linaro_version}" = x"${CT_GDB_VERSION}" ]; then
@@ -24,7 +24,7 @@ do_debug_gdb_get() {
                        {http,ftp,https}://ftp.gnu.org/pub/gnu/gdb          \
                        ftp://{sourceware.org,gcc.gnu.org}/pub/gdb/releases
         else
-            YYMM=`echo ${CT_GDB_VERSION} |cut -d- -f3 |${sed} -e 's,^..,,'`
+            YYMM=`echo ${CT_GDB_VERSION} |cut -d- -f3 |sed -e 's,^..,,'`
             CT_GetFile "gdb-${CT_GDB_VERSION}"                                                        \
                        "http://launchpad.net/gdb-linaro/${linaro_series}/${linaro_version}/+download" \
                        https://releases.linaro.org/${YYMM}/components/toolchain/gdb-linaro            \
@@ -68,12 +68,19 @@ do_debug_gdb_build() {
         cd "${CT_BUILD_DIR}/build-gdb-cross"
 
         cross_extra_config=("${extra_config[@]}")
-        cross_extra_config+=("--with-expat")
+
+        # For gdb-cross this combination of flags forces
+        # gdb configure to fall back to default '-lexpat' flag
+        # which is acceptable.
+        #
         # NOTE: DO NOT USE --with-libexpat-prefix (until GDB configure is smarter)!!!
         # It conflicts with a static build: GDB's configure script will find the shared
         # version of expat and will attempt to link that, despite the -static flag.
         # The link will fail, and configure will abort with "expat missing or unusable"
         # message.
+        cross_extra_config+=("--with-expat")
+        cross_extra_config+=("--without-libexpat-prefix")
+
         case "${CT_THREADS}" in
             none)   cross_extra_config+=("--disable-threads");;
             *)      cross_extra_config+=("--enable-threads");;
@@ -128,15 +135,15 @@ do_debug_gdb_build() {
             "${CT_GDB_CROSS_EXTRA_CONFIG_ARRAY[@]}"
 
         CT_DoLog EXTRA "Building cross-gdb"
-        CT_DoExecLog ALL ${make} ${JOBSFLAGS}
+        CT_DoExecLog ALL make ${JOBSFLAGS}
 
         CT_DoLog EXTRA "Installing cross-gdb"
-        CT_DoExecLog ALL ${make} install
+        CT_DoExecLog ALL make install
 
         if [ "${CT_BUILD_MANUALS}" = "y" ]; then
             CT_DoLog EXTRA "Building and installing the cross-GDB manuals"
-            CT_DoExecLog ALL ${make} ${JOBSFLAGS} pdf html
-            CT_DoExecLog ALL ${make} install-{pdf,html}-gdb
+            CT_DoExecLog ALL make ${JOBSFLAGS} pdf html
+            CT_DoExecLog ALL make install-{pdf,html}-gdb
         fi
 
         if [ "${CT_GDB_INSTALL_GDBINIT}" = "y" ]; then
@@ -145,11 +152,11 @@ do_debug_gdb_build() {
             if [ -f "${CT_SRC_DIR}/gcc-${CT_CC_GCC_VERSION}/gcc/BASE-VER" ]; then
                 gcc_version=$( cat "${CT_SRC_DIR}/gcc-${CT_CC_GCC_VERSION}/gcc/BASE-VER" )
             else
-                gcc_version=$(${sed} -r -e '/version_string/!d; s/^.+= "([^"]+)".*$/\1/;'   \
+                gcc_version=$(sed -r -e '/version_string/!d; s/^.+= "([^"]+)".*$/\1/;'   \
                                    "${CT_SRC_DIR}/gcc-${CT_CC_GCC_VERSION}/gcc/version.c"   \
                              )
             fi
-            ${sed} -r                                               \
+            sed -r                                               \
                    -e "s:@@PREFIX@@:${CT_PREFIX_DIR}:;"             \
                    -e "s:@@VERSION@@:${gcc_version}:;"              \
                    "${CT_LIB_DIR}/scripts/build/debug/gdbinit.in"   \
@@ -172,12 +179,24 @@ do_debug_gdb_build() {
             native_extra_config+=("--with-curses")
         fi
 
-        native_extra_config+=("--with-expat")
+        # Target libexpat resides in sysroot and does not have
+        # any dependencies, so just passing '-lexpat' to gcc is enough.
+        #
+        # By default gdb configure looks for expat in '$prefix/lib'
+        # directory. In our case '$prefix/lib' resolves to '/usr/lib'
+        # where libexpat for build platform lives, which is
+        # unacceptable for cross-compiling.
+        #
+        # To prevent this '--without-libexpat-prefix' flag must be passed.
+        # Thus configure falls back to '-lexpat', which is exactly what we want.
+        #
         # NOTE: DO NOT USE --with-libexpat-prefix (until GDB configure is smarter)!!!
         # It conflicts with a static build: GDB's configure script will find the shared
         # version of expat and will attempt to link that, despite the -static flag.
         # The link will fail, and configure will abort with "expat missing or unusable"
         # message.
+        native_extra_config+=("--with-expat")
+        native_extra_config+=("--without-libexpat-prefix")
 
         CT_DoLog EXTRA "Configuring native gdb"
 
@@ -230,10 +249,10 @@ do_debug_gdb_build() {
             "${native_extra_config[@]}"
 
         CT_DoLog EXTRA "Building native gdb"
-        CT_DoExecLog ALL ${make} ${JOBSFLAGS} CC=${CT_TARGET}-${CT_CC}
+        CT_DoExecLog ALL make ${JOBSFLAGS} CC=${CT_TARGET}-${CT_CC}
 
         CT_DoLog EXTRA "Installing native gdb"
-        CT_DoExecLog ALL ${make} DESTDIR="${CT_DEBUGROOT_DIR}" install
+        CT_DoExecLog ALL make DESTDIR="${CT_DEBUGROOT_DIR}" install
 
         # Building a native gdb also builds a gdbserver
         find "${CT_DEBUGROOT_DIR}" -type f -name gdbserver -exec rm -fv {} \; 2>&1 |CT_DoLog ALL
@@ -302,10 +321,10 @@ do_debug_gdb_build() {
             "${gdbserver_extra_config[@]}"
 
         CT_DoLog EXTRA "Building gdbserver"
-        CT_DoExecLog ALL ${make} ${JOBSFLAGS} CC=${CT_TARGET}-${CT_CC}
+        CT_DoExecLog ALL make ${JOBSFLAGS} CC=${CT_TARGET}-${CT_CC}
 
         CT_DoLog EXTRA "Installing gdbserver"
-        CT_DoExecLog ALL ${make} DESTDIR="${CT_DEBUGROOT_DIR}" install
+        CT_DoExecLog ALL make DESTDIR="${CT_DEBUGROOT_DIR}" install
 
         CT_EndStep
     fi
