@@ -26,7 +26,6 @@ do_gmp_extract() {
 
 # Build GMP for running on build
 # - always build statically
-# - we do not have build-specific CFLAGS
 # - install in build-tools prefix
 do_gmp_for_build() {
     local -a gmp_opts
@@ -89,9 +88,13 @@ do_gmp_backend() {
         extra_config+=("--enable-mpbsd")
     fi
 
+    # FIXME: GMP's configure script doesn't respect the host parameter
+    # when not cross-compiling, ie when build == host.
     CT_DoExecLog CFG                                \
+    CC="${host}-gcc"                                \
     CFLAGS="${cflags} -fexceptions"                 \
     LDFLAGS="${ldflags}"                            \
+    ${CONFIG_SHELL}                                 \
     "${CT_SRC_DIR}/gmp-${CT_GMP_VERSION}/configure" \
         --build=${CT_BUILD}                         \
         --host=${host}                              \
@@ -100,14 +103,19 @@ do_gmp_backend() {
         --enable-cxx                                \
         --disable-shared                            \
         --enable-static                             \
-        "${extra_config}"
+        "${extra_config[@]}"
 
     CT_DoLog EXTRA "Building GMP"
     CT_DoExecLog ALL make ${JOBSFLAGS}
 
     if [ "${CT_COMPLIBS_CHECK}" = "y" ]; then
-        CT_DoLog EXTRA "Checking GMP"
-        CT_DoExecLog ALL make ${JOBSFLAGS} -s check
+        if [ "${host}" = "${CT_BUILD}" ]; then
+            CT_DoLog EXTRA "Checking GMP"
+            CT_DoExecLog ALL make ${JOBSFLAGS} -s check
+        else
+            # Cannot run host binaries on build in a canadian cross
+            CT_DoLog EXTRA "Skipping check for GMP on the host"
+        fi
     fi
 
     CT_DoLog EXTRA "Installing GMP"

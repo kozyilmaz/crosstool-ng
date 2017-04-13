@@ -35,7 +35,8 @@ choice
     prompt "uClibc Version Name"
 
 config LIBC_UCLIBC_CUSTOM_UCLIBC
-    bool "uClibc"
+    bool "uClibc (OBSOLETE)"
+    depends on OBSOLETE
     select LIBC_UCLIBC_0_9_33_2_or_later
 
 config LIBC_UCLIBC_CUSTOM_UCLIBC_NG
@@ -81,20 +82,27 @@ choice
 # Don't remove next line
 # CT_INSERT_VERSION_BELOW
 
+config LIBC_UCLIBC_NG_V_1_0_22
+    bool
+    prompt "1.0.22"
+    select LIBC_UCLIBC_NG_1_0_15_or_later
+
 config LIBC_UCLIBC_NG_V_1_0_21
     bool
-    prompt "1.0.21"
+    prompt "1.0.21 (OBSOLETE)"
+    depends on OBSOLETE
     select LIBC_UCLIBC_NG_1_0_15_or_later
 
 config LIBC_UCLIBC_NG_V_1_0_20
     bool
-    prompt "1.0.20"
+    prompt "1.0.20 (OBSOLETE)"
     depends on OBSOLETE
     select LIBC_UCLIBC_NG_1_0_15_or_later
 
 config LIBC_UCLIBC_V_0_9_33_2
     bool
-    prompt "0.9.33.2"
+    prompt "0.9.33.2 (OBSOLETE)"
+    depends on OBSOLETE
     select LIBC_UCLIBC_0_9_33_2_or_later
 
 endchoice
@@ -103,6 +111,7 @@ config LIBC_VERSION
     string
 # Don't remove next line
 # CT_INSERT_VERSION_STRING_BELOW
+    default "1.0.22" if LIBC_UCLIBC_NG_V_1_0_22
     default "1.0.21" if LIBC_UCLIBC_NG_V_1_0_21
     default "1.0.20" if LIBC_UCLIBC_NG_V_1_0_20
     default "0.9.33.2" if LIBC_UCLIBC_V_0_9_33_2
@@ -142,22 +151,28 @@ config LIBC_UCLIBC_VERBOSITY_0
 
 config LIBC_UCLIBC_VERBOSITY_1
     bool
-    prompt "Very verbose build"
+    prompt "Brief build (show defines, ld flags)"
     help
       Print simplified command lines.
 
 config LIBC_UCLIBC_VERBOSITY_2
     bool
-    prompt "Brief build (show defines, ld flags)"
+    prompt "Very verbose build"
     help
       Print full command lines.
 
 endchoice
 
+# uClibc-ng has reverted the meaning of V=1 and V=2 compared to its
+# ancestor, uClibc, in order to match kernel's Kbuild settings.
+# Hence, for uClibc-ng supply V=2 if "brief build" is selected,
+# and so forth.
 config LIBC_UCLIBC_VERBOSITY
     string
     default ""      if LIBC_UCLIBC_VERBOSITY_0
+    default "V=2"   if LIBC_UCLIBC_VERBOSITY_1 && LIBC_UCLIBC_NG
     default "V=1"   if LIBC_UCLIBC_VERBOSITY_1
+    default "V=1"   if LIBC_UCLIBC_VERBOSITY_2 && LIBC_UCLIBC_NG
     default "V=2"   if LIBC_UCLIBC_VERBOSITY_2
 
 choice

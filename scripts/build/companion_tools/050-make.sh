@@ -12,7 +12,7 @@ do_companion_tools_make_extract() {
 }
 
 do_companion_tools_make_for_build() {
-    CT_DoStep EXTRA "Installing make for build"
+    CT_DoStep INFO "Installing make for build"
     CT_mkdir_pushd "${CT_BUILD_DIR}/build-make-build"
     do_make_backend \
         host=${CT_BUILD} \
@@ -27,7 +27,7 @@ do_companion_tools_make_for_build() {
 }
 
 do_companion_tools_make_for_host() {
-    CT_DoStep EXTRA "Installing make for host"
+    CT_DoStep INFO "Installing make for host"
     CT_mkdir_pushd "${CT_BUILD_DIR}/build-make-host"
     do_make_backend \
         host=${CT_HOST} \
@@ -46,18 +46,25 @@ do_make_backend() {
     local prefix
     local cflags
     local ldflags
+    local -a extra_config
 
     for arg in "$@"; do
         eval "${arg// /\\ }"
     done
 
+    if [ "${host}" != "${CT_BUILD}" ]; then
+        extra_config+=( --without-guile )
+    fi
+
     CT_DoLog EXTRA "Configuring make"
     CT_DoExecLog CFG \
                      CFLAGS="${cflags}" \
                      LDFLAGS="${ldflags}" \
+                     ${CONFIG_SHELL} \
                      "${CT_SRC_DIR}/make-${CT_MAKE_VERSION}/configure" \
                      --host="${host}" \
-                     --prefix="${prefix}"
+                     --prefix="${prefix}" \
+		     "${extra_config[@]}"
 
     CT_DoLog EXTRA "Building make"
     CT_DoExecLog ALL make

@@ -1,7 +1,5 @@
 # Build script for the gdb debug facility
 
-if [ "${CT_GDB_CROSS}" = y -o "${CT_GDB_GDBSERVER}" = "y" -o "${CT_GDB_NATIVE}" = "y" ]; then
-
 do_debug_gdb_get() {
     local linaro_version=""
     local linaro_series=""
@@ -50,7 +48,7 @@ do_debug_gdb_build() {
 
     if [ "${CT_GDB_CROSS}" = "y" ]; then
         local -a cross_extra_config
-        local gcc_version
+        local gcc_version p _p
 
         CT_DoStep INFO "Installing cross-gdb"
         CT_DoLog EXTRA "Configuring cross-gdb"
@@ -77,7 +75,20 @@ do_debug_gdb_build() {
             *)      cross_extra_config+=("--enable-threads");;
         esac
         if [ "${CT_GDB_CROSS_PYTHON}" = "y" ]; then
-            cross_extra_config+=( "--with-python=yes" )
+            if [ -z "${CT_GDB_CROSS_PYTHON_BINARY}" ]; then
+                for p in python python3 python2; do
+                    _p=$( which "${p}" || true )
+                    if [ -n "${_p}" ]; then
+                       cross_extra_config+=( "--with-python=${_p}" )
+                       break
+                    fi
+                done
+                if [ -z "${_p}" ]; then
+                    CT_Abort "Python support requested in cross-gdb, but Python not found. Set CT_GDB_CROSS_PYTHON_BINARY in your config."
+                fi
+            else
+                cross_extra_config+=( "--with-python=${CT_GDB_CROSS_PYTHON_BINARY}" )
+            fi
         else
             cross_extra_config+=( "--with-python=no" )
         fi
@@ -104,6 +115,11 @@ do_debug_gdb_build() {
                 # FIXME: Really, we should be testing for host compiler being clang.
                 CC_for_gdb+=" -Qunused-arguments"
                 CXX_for_gdb+=" -Qunused-arguments"
+                # clang detects the line from gettext's _ macro as format string
+                # not being a string literal and produces a lot of warnings - which
+                # ct-ng's logger faithfully relays to user if this happens in the
+                # error() function. Suppress them.
+                cross_extra_config+=( "--enable-build-warnings=,-Wno-format-nonliteral,-Wno-format-security" )
                 ;;
         esac
 
@@ -124,10 +140,13 @@ do_debug_gdb_build() {
         CT_DoLog DEBUG "Extra config passed: '${cross_extra_config[*]}'"
 
         CT_DoExecLog CFG                                \
+        CC_FOR_BUILD="${CT_BUILD}-gcc"                  \
+        CFLAGS_FOR_BUILD="${cflags_for_build}"          \
         CPP="${CPP_for_gdb}"                            \
         CC="${CC_for_gdb}"                              \
         CXX="${CXX_for_gdb}"                            \
         LD="${LD_for_gdb}"                              \
+        ${CONFIG_SHELL}                                 \
         "${gdb_src_dir}/configure"                      \
             --build=${CT_BUILD}                         \
             --host=${CT_HOST}                           \
@@ -177,6 +196,9 @@ do_debug_gdb_build() {
         CT_DoStep INFO "Installing native gdb"
 
         native_extra_config=("${extra_config[@]}")
+
+        # We may not have C++ language configured for target
+        native_extra_config+=("--disable-build-with-cxx")
 
         # GDB on Mingw depends on PDcurses, not ncurses
         if [ "${CT_MINGW32}" != "y" ]; then
@@ -235,10 +257,13 @@ do_debug_gdb_build() {
         CT_DoLog DEBUG "Extra config passed: '${native_extra_config[*]}'"
 
         CT_DoExecLog CFG                                \
+        CC_FOR_BUILD="${CT_BUILD}-gcc"                  \
+        CFLAGS_FOR_BUILD="${cflags_for_build}"          \
         CPP="${CPP_for_gdb}"                            \
         CC="${CC_for_gdb}"                              \
         CXX="${CXX_for_gdb}"                            \
         LD="${LD_for_gdb}"                              \
+        ${CONFIG_SHELL}                                 \
         "${gdb_src_dir}/configure"                      \
             --build=${CT_BUILD}                         \
             --host=${CT_TARGET}                         \
@@ -291,6 +316,9 @@ do_debug_gdb_build() {
 
         gdbserver_extra_config=("${extra_config[@]}")
 
+        # We may not have C++ language configured for target
+        gdbserver_extra_config+=("--disable-build-with-cxx")
+
         if [ "${CT_GDB_GDBSERVER_HAS_IPA_LIB}" = "y" ]; then
             if [ "${CT_GDB_GDBSERVER_BUILD_IPA_LIB}" = "y" ]; then
                 gdbserver_extra_config+=( --enable-inprocess-agent )
@@ -305,10 +333,13 @@ do_debug_gdb_build() {
         gdbserver_extra_config+=("--disable-gas")
 
         CT_DoExecLog CFG                                \
+        CC_FOR_BUILD="${CT_BUILD}-gcc"                  \
+        CFLAGS_FOR_BUILD="${cflags_for_build}"          \
         CC="${CT_TARGET}-${CT_CC}"                      \
         CPP="${CT_TARGET}-cpp"                          \
         LD="${CT_TARGET}-ld"                            \
         LDFLAGS="${gdbserver_LDFLAGS}"                  \
+        ${CONFIG_SHELL}                                 \
         "${gdb_src_dir}/gdb/gdbserver/configure"        \
             --build=${CT_BUILD}                         \
             --host=${CT_TARGET}                         \
@@ -337,5 +368,3 @@ do_debug_gdb_build() {
         CT_EndStep
     fi
 }
-
-fi

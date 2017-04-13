@@ -24,7 +24,6 @@ if [ "${CT_LIBELF}" = "y" ]; then
 
 # Build libelf for running on build
 # - always build statically
-# - we do not have build-specific CFLAGS
 # - install in build-tools prefix
 do_libelf_for_build() {
     local -a libelf_opts
@@ -131,6 +130,7 @@ do_libelf_backend() {
     RANLIB="${host}-ranlib"                                 \
     CFLAGS="${cflags} -fPIC"                                \
     LDFLAGS="${ldflags}"                                    \
+    ${CONFIG_SHELL}                                         \
     "${CT_SRC_DIR}/libelf-${CT_LIBELF_VERSION}/configure"   \
         --build=${CT_BUILD}                                 \
         --host=${host}                                      \

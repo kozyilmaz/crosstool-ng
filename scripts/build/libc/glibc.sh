@@ -5,6 +5,9 @@
 do_libc_get() {
     local date
     local version
+    local -a addons_list
+
+    addons_list=($(do_libc_add_ons_list " "))
 
     # Main source
     if [ "${CT_LIBC_GLIBC_CUSTOM}" = "y" ]; then
@@ -23,15 +26,76 @@ do_libc_get() {
 	esac
     fi
 
+    # C library addons
+    for addon in "${addons_list[@]}"; do
+        # Never ever try to download these add-ons,
+        # they've always been internal
+        case "${addon}" in
+            nptl)   continue;;
+        esac
+
+        case "${addon}:${CT_LIBC_GLIBC_PORTS_EXTERNAL}" in
+            ports:y)    ;;
+            ports:*)    continue;;
+        esac
+
+        if ! CT_GetFile "glibc-${addon}-${CT_LIBC_VERSION}"                      \
+               http://mirrors.kernel.org/sourceware/glibc                        \
+               {http,ftp,https}://ftp.gnu.org/gnu/glibc                          \
+               ftp://{sourceware.org,gcc.gnu.org}/pub/glibc/{releases,snapshots}
+        then
+            # Some add-ons are bundled with glibc, others are
+            # bundled in their own tarball. Eg. NPTL is internal,
+            # while LinuxThreads was external. Also, for old
+            # versions of glibc, the libidn add-on was external,
+            # but with version >=2.10, it is internal.
+            CT_DoLog DEBUG "Addon '${addon}' could not be downloaded."
+            CT_DoLog DEBUG "We'll see later if we can find it in the source tree"
+        fi
+    done
+
     return 0
 }
 
 do_libc_extract() {
+    local addon
+
     CT_Extract "${CT_LIBC}-${CT_LIBC_VERSION}"
     CT_Pushd "${CT_SRC_DIR}/${CT_LIBC}-${CT_LIBC_VERSION}"
     # Custom glibc won't get patched, because CT_GetCustom
     # marks custom glibc as patched.
     CT_Patch nochdir "${CT_LIBC}" "${CT_LIBC_VERSION}"
+
+    for addon in $(do_libc_add_ons_list " "); do
+        # If the addon was bundled with the main archive, we do not
+        # need to extract it. Worse, if we were to try to extract
+        # it, we'd get an error.
+        if [ -d "${addon}" ]; then
+            CT_DoLog DEBUG "Add-on '${addon}' already present, skipping extraction"
+            continue
+        fi
+
+        CT_Extract nochdir "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}"
+
+        CT_TestAndAbort "Error in add-on '${addon}': both short and long names in tarball" \
+            -d "${addon}" -a -d "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}"
+
+        # Some addons have the 'long' name, while others have the
+        # 'short' name, but patches are non-uniformly built with
+        # either the 'long' or 'short' name, whatever the addons name
+        # but we prefer the 'short' name and avoid duplicates.
+        if [ -d "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}" ]; then
+            CT_DoExecLog FILE mv "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}" "${addon}"
+        fi
+
+        CT_DoExecLog FILE ln -s "${addon}" "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}"
+
+        CT_Patch nochdir "${CT_LIBC}" "${addon}-${CT_LIBC_VERSION}"
+
+        # Remove the long name since it can confuse configure scripts to run
+        # the same source twice.
+        rm "${CT_LIBC}-${addon}-${CT_LIBC_VERSION}"
+    done
 
     # The configure files may be older than the configure.in files
     # if using a snapshot (or even some tarballs). Fake them being
@@ -94,7 +158,7 @@ do_libc_backend() {
 #   libc_mode           : 'startfiles' or 'final'               : string    : (empty)
 #   multi_*             : as defined in CT_IterateMultilibs     : (varies)  :
 do_libc_backend_once() {
-    local multi_flags multi_dir multi_os_dir multi_root multi_index multi_count
+    local multi_flags multi_dir multi_os_dir multi_root multi_index multi_count multi_target
     local build_cflags build_cppflags build_ldflags
     local startfiles_dir
     local src_dir="${CT_SRC_DIR}/${CT_LIBC}-${CT_LIBC_VERSION}"
@@ -183,6 +247,10 @@ do_libc_backend_once() {
     [ -n "${CT_TOOLCHAIN_BUGURL}" ] && extra_config+=("--with-bugurl=${CT_TOOLCHAIN_BUGURL}")
 
     touch config.cache
+
+    # Hide host C++ binary from configure
+    echo "ac_cv_prog_ac_ct_CXX=${CT_TARGET}-g++" >>config.cache
+
     if [ "${CT_LIBC_GLIBC_FORCE_UNWIND}" = "y" ]; then
         echo "libc_cv_forced_unwind=yes" >>config.cache
         echo "libc_cv_c_cleanup=yes" >>config.cache
@@ -228,6 +296,8 @@ do_libc_backend_once() {
     # directly mangle the generated scripts _after_ they get built,
     # or even after they get installed...
     echo "ac_cv_path_BASH_SHELL=/bin/bash" >>config.cache
+
+    CT_SymlinkToolsMultilib
 
     # Configure with --prefix the way we want it on the target...
     # There are a whole lot of settings here.  You'll probably want
@@ -282,13 +352,21 @@ do_libc_backend_once() {
     build_ldflags="${CT_LDFLAGS_FOR_BUILD}"
 
     case "$CT_BUILD" in
-        *mingw*|*cygwin*|*msys*|*darwin*)
+        *mingw*|*cygwin*|*msys*|*darwin*|*freebsd*)
             # When installing headers on Cygwin, Darwin, MSYS2 and MinGW-w64 sunrpc needs
             # gettext for building cross-rpcgen.
             build_cppflags="${build_cppflags} -I${CT_BUILDTOOLS_PREFIX_DIR}/include/"
             build_ldflags="${build_ldflags} -lintl -liconv"
+            case "$CT_BUILD" in
+                *cygwin*|*freebsd*)
+                # Additionally, stat in FreeBSD, Cygwin, and possibly others
+                # is always 64bit, so replace struct stat64 with stat.
+                build_cppflags="${build_cppflags} -Dstat64=stat"
+                ;;
+            esac
             ;;
     esac
+
     extra_make_args+=( "BUILD_CFLAGS=${build_cflags}" )
     extra_make_args+=( "BUILD_CPPFLAGS=${build_cppflags}" )
     extra_make_args+=( "BUILD_LDFLAGS=${build_ldflags}" )
@@ -392,8 +470,8 @@ do_libc_backend_once() {
             # manuals in parallel
             CT_DoExecLog ALL make pdf html
             CT_DoExecLog ALL mkdir -p ${CT_PREFIX_DIR}/share/doc
-            CT_DoExecLog ALL cp -av ${src_dir}/manual/*.pdf    \
-                                    ${src_dir}/manual/libc     \
+            CT_DoExecLog ALL cp -av manual/*.pdf    \
+                                    manual/libc     \
                                     ${CT_PREFIX_DIR}/share/doc
         fi
 
@@ -462,6 +540,15 @@ do_libc_locales() {
     local -a extra_config
     local glibc_cflags
 
+    # To build locales, we'd need to build glibc for the build machine.
+    # Bail out if the host is not supported.
+    case "${CT_BUILD}" in
+        *-cygwin|*-darwin*)
+            CT_DoLog EXTRA "Skipping GNU libc locales: incompatible build machine"
+            return
+            ;;
+    esac
+
     mkdir -p "${CT_BUILD_DIR}/build-localedef"
     cd "${CT_BUILD_DIR}/build-localedef"
 
@@ -502,6 +589,7 @@ do_libc_locales() {
 
     CT_DoExecLog CFG                       \
     CFLAGS="${glibc_cflags}"               \
+    ${CONFIG_SHELL}                        \
     "${src_dir}/configure"                 \
         --prefix=/usr                      \
         --cache-file="$(pwd)/config.cache" \

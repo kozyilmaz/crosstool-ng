@@ -60,6 +60,11 @@ choice
 # Don't remove next line
 # CT_INSERT_VERSION_BELOW
 
+config BINUTILS_V_2_28
+    bool
+    prompt "2.28"
+    select BINUTILS_2_27_or_later
+
 config BINUTILS_V_2_27
     bool
     prompt "2.27"
@@ -72,36 +77,42 @@ config BINUTILS_V_2_26
 
 config BINUTILS_V_2_25_1
     bool
-    prompt "2.25.1"
+    prompt "2.25.1 (OBSOLETE)"
     select BINUTILS_2_25_1_or_later
+    depends on OBSOLETE
 
 config BINUTILS_LINARO_V_2_25
     bool
-    prompt "linaro-2.25.0-2015.01-2"
+    prompt "linaro-2.25.0-2015.01-2 (OBSOLETE)"
     select BINUTILS_2_25_or_later
     depends on BINUTILS_SHOW_LINARO
+    depends on OBSOLETE
 
 config BINUTILS_LINARO_V_2_24
     bool
-    prompt "linaro-2.24.0-2014.11-2"
+    prompt "linaro-2.24.0-2014.11-2 (OBSOLETE)"
     select BINUTILS_2_24_or_later
     depends on BINUTILS_SHOW_LINARO
+    depends on OBSOLETE
 
 config BINUTILS_V_2_24
     bool
-    prompt "2.24"
+    prompt "2.24 (OBSOLETE)"
     select BINUTILS_2_24_or_later
+    depends on OBSOLETE
 
 config BINUTILS_LINARO_V_2_23_2
     bool
-    prompt "linaro-2.23.2-2013.10-4"
+    prompt "linaro-2.23.2-2013.10-4 (OBSOLETE)"
     select BINUTILS_2_23_2_or_later
     depends on BINUTILS_SHOW_LINARO
+    depends on OBSOLETE
 
 config BINUTILS_V_2_23_2
     bool
-    prompt "2.23.2"
+    prompt "2.23.2 (OBSOLETE)"
     select BINUTILS_2_23_2_or_later
+    depends on OBSOLETE
 
 endchoice
 
@@ -109,6 +120,7 @@ config BINUTILS_VERSION
     string
 # Don't remove next line
 # CT_INSERT_VERSION_STRING_BELOW
+    default "2.28" if BINUTILS_V_2_28
     default "2.27" if BINUTILS_V_2_27
     default "2.26" if BINUTILS_V_2_26
     default "2.25.1" if BINUTILS_V_2_25_1
@@ -172,10 +184,14 @@ config BINUTILS_HAS_PLUGINS
 config BINUTILS_HAS_PKGVERSION_BUGURL
     bool
 
-# Force using the BFD linker if needed
-# This is the case for some C libraries (eg. glibc at least) and affected
-# components can select this
-config BINUTILS_FORCE_LD_BFD
+# Force using the BFD linker if needed. There are two options:
+# - For some C libraries (eg. glibc at least), BFD ld must be
+#   built and be selected by default.
+# - For elf2flt, BFD ld must be the only linker built.
+config BINUTILS_FORCE_LD_BFD_DEFAULT
+    bool
+
+config BINUTILS_FORCE_LD_BFD_ONLY
     bool
 
 choice
@@ -192,7 +208,7 @@ config BINUTILS_LINKER_GOLD
     bool
     prompt "gold"
     depends on BINUTILS_GOLD_SUPPORT
-    depends on ! BINUTILS_FORCE_LD_BFD
+    depends on !BINUTILS_FORCE_LD_BFD_DEFAULT && !BINUTILS_FORCE_LD_BFD_ONLY
     select BINUTILS_GOLD_INSTALLED
     help
       gold is a new, optimised, multi-threaded linker with support
@@ -203,6 +219,7 @@ config BINUTILS_LINKER_GOLD
 config BINUTILS_LINKER_LD_GOLD
     bool
     prompt "ld, gold"
+    depends on !BINUTILS_FORCE_LD_BFD_ONLY
     depends on BINUTILS_GOLD_SUPPORT
     select BINUTILS_GOLD_INSTALLED
     select BINUTILS_LINKER_BOTH
@@ -215,10 +232,11 @@ config BINUTILS_LINKER_LD_GOLD
 config BINUTILS_LINKER_GOLD_LD
     bool
     prompt "gold, ld"
+    depends on !BINUTILS_FORCE_LD_BFD_ONLY
     depends on BINUTILS_GOLD_SUPPORT
     select BINUTILS_GOLD_INSTALLED
     select BINUTILS_LINKER_BOTH
-    select BINUTILS_LD_WRAPPER if BINUTILS_FORCE_LD_BFD
+    select BINUTILS_LD_WRAPPER if BINUTILS_FORCE_LD_BFD_DEFAULT
     help
       Both the historical ld and the new gold linkers will be
       installed, with gold being the default linker used.

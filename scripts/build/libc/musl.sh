@@ -29,7 +29,9 @@ do_libc() {
 }
 
 do_libc_post_cc() {
-    :
+    # MUSL creates dynamic linker symlink with absolute path - which works on the
+    # target but not on the host. We want our cross-ldd tool to work.
+    CT_MultilibFixupLDSO
 }
 
 do_libc_backend() {
@@ -102,6 +104,8 @@ do_libc_backend_once() {
         extra_config+=( "--includedir=/usr/include/${hdr_install_subdir}" )
     fi
 
+    CT_SymlinkToolsMultilib
+
     # NOTE: musl handles the build/host/target a little bit differently
     # then one would expect:
     #   build   : not used
@@ -110,6 +114,7 @@ do_libc_backend_once() {
     CT_DoExecLog CFG                                      \
     CFLAGS="${extra_cflags[*]}"                           \
     CROSS_COMPILE="${CT_TARGET}-"                         \
+    ${CONFIG_SHELL}                                       \
     ${src_dir}/configure                                  \
         --host="${multi_target}"                          \
         --target="${multi_target}"                        \
@@ -153,6 +158,9 @@ do_libc_backend_once() {
                     ;;
             esac
         done
+
+        # Any additional actions for this architecture
+        CT_DoArchMUSLPostInstall
     fi
 
     CT_EndStep

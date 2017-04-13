@@ -12,7 +12,7 @@ do_companion_tools_autoconf_extract() {
 }
 
 do_companion_tools_autoconf_for_build() {
-    CT_DoStep EXTRA "Installing autoconf for build"
+    CT_DoStep INFO "Installing autoconf for build"
     CT_mkdir_pushd "${CT_BUILD_DIR}/build-autoconf-build"
     do_autoconf_backend host=${CT_BUILD} prefix="${CT_BUILD_COMPTOOLS_DIR}"
     CT_Popd
@@ -20,7 +20,7 @@ do_companion_tools_autoconf_for_build() {
 }
 
 do_companion_tools_autoconf_for_host() {
-    CT_DoStep EXTRA "Installing autoconf for host"
+    CT_DoStep INFO "Installing autoconf for host"
     CT_mkdir_pushd "${CT_BUILD_DIR}/build-autoconf-host"
     do_autoconf_backend host=${CT_HOST} prefix="${CT_PREFIX_DIR}"
     CT_Popd
@@ -40,7 +40,8 @@ do_autoconf_backend() {
     # For reference see:
     # http://www.gnu.org/software/autoconf/manual/autoconf.html#CONFIG_005fSHELL
     CT_DoLog EXTRA "Configuring autoconf"
-    CT_DoExecLog CFG ${CONFIG_SHELL} \
+    CT_DoExecLog CFG \
+    ${CONFIG_SHELL} \
     "${CT_SRC_DIR}/autoconf-${CT_AUTOCONF_VERSION}/configure" \
                      --host="${host}" \
                      --prefix="${prefix}"

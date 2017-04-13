@@ -25,7 +25,6 @@ do_isl_extract() {
 
 # Build ISL for running on build
 # - always build statically
-# - we do not have build-specific CFLAGS
 # - install in build-tools prefix
 do_isl_for_build() {
     local -a isl_opts
@@ -100,6 +99,7 @@ do_isl_backend() {
     CFLAGS="${cflags}"                              \
     CXXFLAGS="${cxxflags}"                          \
     LDFLAGS="${ldflags}"                            \
+    ${CONFIG_SHELL}                                 \
     "${CT_SRC_DIR}/isl-${CT_ISL_VERSION}/configure" \
         --build=${CT_BUILD}                         \
         --host=${host}                              \
@@ -115,8 +115,13 @@ do_isl_backend() {
     CT_DoExecLog ALL make ${JOBSFLAGS}
 
     if [ "${CT_COMPLIBS_CHECK}" = "y" ]; then
-        CT_DoLog EXTRA "Checking ISL"
-        CT_DoExecLog ALL make ${JOBSFLAGS} -s check
+        if [ "${host}" = "${CT_BUILD}" ]; then
+            CT_DoLog EXTRA "Checking ISL"
+            CT_DoExecLog ALL make ${JOBSFLAGS} -s check
+        else
+            # Cannot run host binaries on build in a canadian cross
+            CT_DoLog EXTRA "Skipping check for ISL on the host"
+        fi
     fi
 
     CT_DoLog EXTRA "Installing ISL"

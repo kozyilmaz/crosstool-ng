@@ -76,15 +76,23 @@ do_libiconv_backend() {
         eval "${arg// /\\ }"
     done
 
-    CT_DoLog EXTRA "Configuring libiconv"
+    case "${host}" in
+        *-linux-gnu*)
+            CT_DoLog EXTRA "Skipping (included in GNU C library)"
+            return
+            ;;
+    esac
 
     if [ "${shared}" != "y" ]; then
         extra_config+=("--disable-shared")
     fi
 
+    CT_DoLog EXTRA "Configuring libiconv"
+
     CT_DoExecLog CFG                                          \
     CFLAGS="${cflags}"                                        \
     LDFLAGS="${ldflags}"                                      \
+    ${CONFIG_SHELL}                                           \
     "${CT_SRC_DIR}/libiconv-${CT_LIBICONV_VERSION}/configure" \
         --build=${CT_BUILD}                                   \
         --host="${host}"                                      \
