@@ -1,5 +1,3 @@
-#!@@CT_bash@@
-
 # This script is responsible for saving the current configuration into a
 # sample to be used later on as a pre-configured target.
 
@@ -74,8 +72,8 @@ fi
 # Save the uClibc .config file
 if [ -n "${CT_LIBC_UCLIBC_CONFIG_FILE}" ]; then
     # We save the file, and then point the saved sample to this file
-    CT_DoAddFileToSample "${CT_LIBC_UCLIBC_CONFIG_FILE}" "${samp_dir}/${CT_LIBC}-${CT_LIBC_VERSION}.config"
-    "${sed}" -r -i -e 's|^(CT_LIBC_UCLIBC_CONFIG_FILE)=.+$|\1="'"${samp_top_dir}"'/samples/${CT_TARGET}/${CT_LIBC}-${CT_LIBC_VERSION}.config"|;' \
+    CT_DoAddFileToSample "${CT_LIBC_UCLIBC_CONFIG_FILE}" "${samp_dir}/${CT_LIBC}.config"
+    "${sed}" -r -i -e 's|^(CT_LIBC_UCLIBC_CONFIG_FILE)=.+$|\1="'"${samp_top_dir}"'/samples/${CT_TARGET}/${CT_LIBC}.config"|;' \
              .defconfig
 else
     # remove any dangling files
@@ -86,7 +84,7 @@ fi
 
 # Now, actually save the defconfig
 export KCONFIG_CONFIG="$(pwd)/.defconfig"
-${CONF} --savedefconfig="${samp_dir}/crosstool.config" "${KCONFIG_TOP}"
+srctree="${CT_LIB_DIR}" ${CONF} --savedefconfig="${samp_dir}/crosstool.config" "${KCONFIG_TOP}"
 rm -f .defconfig
 
 # Fill-in the reported-by info

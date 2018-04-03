@@ -32,10 +32,6 @@ include $(CT_LIB_DIR)/paths.mk
 # bash.
 export SHELL=$(bash)
 
-# GREP_OPTIONS=--color=always will break the generated .in files
-# We do not need any GREP_OPTIONS anyway, so set it to empty.
-export GREP_OPTIONS=
-
 # Make the restart/stop steps available to scripts/crostool-NG.sh
 export CT_STOP:=$(STOP)
 export CT_RESTART:=$(RESTART)
@@ -111,7 +107,6 @@ help-clean::
 	@echo  '  clean              - Remove generated files'
 	@echo  '  distclean          - Remove generated files, configuration and build directories'
 
-include $(CT_LIB_DIR)/config/config.mk
 include $(CT_LIB_DIR)/kconfig/kconfig.mk
 include $(CT_LIB_DIR)/steps.mk
 include $(CT_LIB_DIR)/samples/samples.mk
@@ -137,14 +132,14 @@ help-env::
 	@false
 
 show-tuple: .config
-	$(SILENT)$(bash) $(CT_LIB_DIR)/scripts/showConfig.sh '$${CT_TARGET}'
+	$(SILENT)$(bash) $(CT_LIB_DIR)/scripts/show-tuple.sh '$${CT_TARGET}'
 
 # Actual build
 source: .config
-	$(SILENT)CT_SOURCE=y $(CT_LIB_DIR)/scripts/crosstool-NG.sh
+	$(SILENT)CT_SOURCE=y $(bash) $(CT_LIB_DIR)/scripts/crosstool-NG.sh
 
 build: .config
-	$(SILENT)$(CT_LIB_DIR)/scripts/crosstool-NG.sh
+	$(SILENT)$(bash) $(CT_LIB_DIR)/scripts/crosstool-NG.sh
 
 build.%:
 	$(SILENT)$(MAKE) -rf $(CT_NG) build CT_JOBS=$*

@@ -1,4 +1,5 @@
 # Using container-based infrastructure
+dist: trusty
 sudo: false
 
 # 'bash' will define a generic environment without interfering environment
@@ -26,6 +27,7 @@ addons:
             - libncurses5-dev
             - texinfo
             - help2man
+            - g++
 
 # Building crosstool-NG core
 install:
@@ -38,7 +40,7 @@ install:
 env:
     - CT_SAMPLE=arm-unknown-eabi
     - CT_SAMPLE=arm-unknown-linux-musleabi
-    - CT_SAMPLE=aarch64-unknown-linux-gnueabi
+    - CT_SAMPLE=aarch64-unknown-linux-gnu
     - CT_SAMPLE=mips64el-multilib-linux-uclibc
     - CT_SAMPLE=powerpc-e500v2-linux-gnuspe
     - CT_SAMPLE=x86_64-unknown-linux-uclibc

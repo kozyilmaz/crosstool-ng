@@ -40,6 +40,8 @@ if [ "${CT_DEBUG_INTERACTIVE}" = "y" -a ! \( -t 0 -a -t 6 -a -t 2 \) ]; then
     exit 1
 fi
 
+CT_TrapEnvExport
+
 # Override the locale early, in case we ever translate crosstool-NG messages
 if [ -z "${CT_NO_OVERRIDE_LC_MESSAGES}" ]; then
     export LC_ALL=C
@@ -51,17 +53,19 @@ CT_SanitizePath
 
 # Some sanity checks in the environment and needed tools
 CT_DoLog INFO "Performing some trivial sanity checks"
-CT_TestAndAbort "Don't set LD_LIBRARY_PATH. It screws up the build." -n "${LD_LIBRARY_PATH}"
-CT_TestAndAbort "Don't set LIBRARY_PATH. It screws up the build." -n "${LIBRARY_PATH}"
-CT_TestAndAbort "Don't set LPATH. It screws up the build." -n "${LPATH}"
-CT_TestAndAbort "Don't set CPATH. It screws up the build." -n "${CPATH}"
-CT_TestAndAbort "Don't set C_INCLUDE_PATH. It screws up the build." -n "${C_INCLUDE_PATH}"
-CT_TestAndAbort "Don't set CPLUS_INCLUDE_PATH. It screws up the build." -n "${CPLUS_INCLUDE_PATH}"
-CT_TestAndAbort "Don't set OBJC_INCLUDE_PATH. It screws up the build." -n "${OBJC_INCLUDE_PATH}"
-CT_TestAndAbort "Don't set CFLAGS. It screws up the build." -n "${CFLAGS}"
-CT_TestAndAbort "Don't set CXXFLAGS. It screws up the build." -n "${CXXFLAGS}"
-CT_Test "GREP_OPTIONS screws up the build. Resetting." -n "${GREP_OPTIONS}"
-export GREP_OPTIONS=
+CT_TestAndAbort "Don't set LD_LIBRARY_PATH. It screws up the build." -n "${LD_LIBRARY_PATH+set}"
+CT_TestAndAbort "Don't set LIBRARY_PATH. It screws up the build." -n "${LIBRARY_PATH+set}"
+CT_TestAndAbort "Don't set LPATH. It screws up the build." -n "${LPATH+set}"
+CT_TestAndAbort "Don't set CPATH. It screws up the build." -n "${CPATH+set}"
+CT_TestAndAbort "Don't set C_INCLUDE_PATH. It screws up the build." -n "${C_INCLUDE_PATH+set}"
+CT_TestAndAbort "Don't set CPLUS_INCLUDE_PATH. It screws up the build." -n "${CPLUS_INCLUDE_PATH+set}"
+CT_TestAndAbort "Don't set OBJC_INCLUDE_PATH. It screws up the build." -n "${OBJC_INCLUDE_PATH+set}"
+CT_TestAndAbort "Don't set CFLAGS. It screws up the build." -n "${CFLAGS+set}"
+CT_TestAndAbort "Don't set CXXFLAGS. It screws up the build." -n "${CXXFLAGS+set}"
+CT_TestAndAbort "Don't set CC. It screws up the build." -n "${CC+set}"
+CT_TestAndAbort "Don't set CXX. It screws up the build." -n "${CXX+set}"
+CT_Test "GREP_OPTIONS screws up the build. Unsetting." -n "${GREP_OPTIONS+set}"
+unset GREP_OPTIONS
 # Workaround against openSUSE 12.1 that breaks ./configure for cross-compilation:
 export CONFIG_SITE=
 
@@ -88,6 +92,7 @@ done
 
 # Where will we work?
 CT_WORK_DIR="${CT_WORK_DIR:-${CT_TOP_DIR}/.build}"
+CT_BUILD_DIR="${CT_BUILD_TOP_DIR}/build"
 CT_DoExecLog ALL mkdir -p "${CT_WORK_DIR}"
 CT_DoExecLog DEBUG rm -f "${CT_WORK_DIR}/backtrace"
 
@@ -118,6 +123,7 @@ cat "${CT_LIB_DIR}/paths.sh" |while read trash line; do
     CT_DoLog DEBUG "Creating script-override for '${tool}' -> '${path}' using '${tmpl}' template"
     CT_DoExecLog ALL cp "${tmpl}" "${CT_TOOLS_OVERRIDE_DIR}/bin/${tool}"
     CT_DoExecLog ALL ${sed} -i -r \
+              -e "s#@INSTALL_WITH_STRIP_PROGRAM@#${CT_CONFIGURE_has_install_with_strip_program}#g" \
               -e "s#@CONFIG_SHELL@#${CT_CONFIG_SHELL}#g" \
               -e "s#@TOOL_PATH@#${path}#g" \
               -e "s#@TOOLS_OVERRIDE_DIR@#${CT_TOOLS_OVERRIDE_DIR}#g" \
@@ -138,9 +144,13 @@ CT_DoStep DEBUG "Dumping user-supplied crosstool-NG configuration"
 CT_DoExecLog DEBUG ${grep} -E '^(# )?CT_' .config
 CT_EndStep
 
-CT_DoLog DEBUG "Unsetting and unexporting MAKEFLAGS"
+CT_DoLog DEBUG "Unsetting MAKEFLAGS"
 unset MAKEFLAGS
-export MAKEFLAGS
+
+# Set the shell to be used by ./configure scripts and by Makefiles (those
+# that support it!).
+export CONFIG_SHELL="${CT_CONFIG_SHELL}"    # for ./configure
+export SHELL="${CT_CONFIG_SHELL}"           # for Makefiles
 
 CT_DoLog INFO "Building environment variables"
 
@@ -155,16 +165,33 @@ CT_PREFIX_DIR="$( ${sed} -r -e 's:/+:/:g; s:/*$::;' <<<"${CT_PREFIX_DIR}" )"
 # Put user-supplied flags at the end, so that they take precedence.
 CT_TARGET_CFLAGS="${CT_ARCH_TARGET_CFLAGS} ${CT_TARGET_CFLAGS}"
 CT_TARGET_LDFLAGS="${CT_ARCH_TARGET_LDFLAGS} ${CT_TARGET_LDFLAGS}"
+
+# FIXME move to gcc.sh
 CT_CC_GCC_CORE_EXTRA_CONFIG_ARRAY=( ${CT_ARCH_CC_CORE_EXTRA_CONFIG} "${CT_CC_GCC_CORE_EXTRA_CONFIG_ARRAY[@]}" )
 CT_CC_GCC_EXTRA_CONFIG_ARRAY=( ${CT_ARCH_CC_EXTRA_CONFIG} "${CT_CC_GCC_EXTRA_CONFIG_ARRAY[@]}" )
 
+# Starting with 1.0.20, applications using uClibc-ng do not link with
+# the default libgcc_c_spec used by GCC if only static libc.a exists - unless
+# -static is thrown in. The difference is that with -static, gcc passes
+# "--start-group -lgcc -lc --end-group" and without -static, it passes
+# "-lgcc -lc -lgcc" instead. The latter leaves a symbol from 2nd libgcc
+# (dl_iterate_phdr) unresolved because -lc is already done at this point.
+# Force static link on the target.
+if [ "${CT_SHARED_LIBS}" != "y" ]; then
+    CT_TARGET_LDFLAGS+=" -static"
+fi
+
 # Compute the package version string
-CT_PKGVERSION="crosstool-NG ${CT_VERSION}${CT_TOOLCHAIN_PKGVERSION:+ - ${CT_TOOLCHAIN_PKGVERSION}}"
+if [ "${CT_SHOW_CT_VERSION}" = "y" ]; then
+    CT_PKGVERSION="crosstool-NG ${CT_VERSION}${CT_TOOLCHAIN_PKGVERSION:+ - ${CT_TOOLCHAIN_PKGVERSION}}"
+else
+    CT_PKGVERSION="${CT_TOOLCHAIN_PKGVERSION}"
+fi
 
 # Compute the working directories names
 CT_TARBALLS_DIR="${CT_WORK_DIR}/tarballs"
-CT_SRC_DIR="${CT_WORK_DIR}/src"
-CT_BUILD_DIR="${CT_BUILD_TOP_DIR}/build"
+CT_COMMON_SRC_DIR="${CT_WORK_DIR}/src"
+CT_SRC_DIR="${CT_BUILD_TOP_DIR}/src"
 CT_BUILDTOOLS_PREFIX_DIR="${CT_BUILD_TOP_DIR}/buildtools"
 CT_STATE_DIR="${CT_WORK_DIR}/${CT_TARGET}/state"
 # Note about HOST_COMPLIBS_DIR: it's always gonna be in the buildtools dir, or a
@@ -242,12 +269,14 @@ CT_DoForceRmdir "${CT_BUILD_DIR}" "${CT_BUILDTOOLS_PREFIX_DIR}"
 
 # Don't eradicate directories if we need to restart
 if [ -z "${CT_RESTART}" ]; then
+    # Per-target sources: eliminate
+    CT_DoForceRmdir "${CT_SRC_DIR}"
     # Get rid of pre-existing installed toolchain and previous build directories.
     if [ "${CT_FORCE_DOWNLOAD}" = "y" -a -d "${CT_TARBALLS_DIR}" ]; then
         CT_DoForceRmdir "${CT_TARBALLS_DIR}"
     fi
-    if [ "${CT_FORCE_EXTRACT}" = "y" -a -d "${CT_SRC_DIR}" ]; then
-        CT_DoForceRmdir "${CT_SRC_DIR}"
+    if [ "${CT_FORCE_EXTRACT}" = "y" -a -d "${CT_COMMON_SRC_DIR}" ]; then
+        CT_DoForceRmdir "${CT_COMMON_SRC_DIR}"
     fi
     if [ -d "${CT_PREFIX_DIR}" -a "${CT_RM_RF_PREFIX_DIR}" = "y" ]; then
         CT_DoForceRmdir "${CT_PREFIX_DIR}"
@@ -262,6 +291,7 @@ fi
 # create already existent directories, and CT_BUILD_DIR needs to be created
 # anyway
 CT_DoExecLog ALL mkdir -p "${CT_TARBALLS_DIR}"
+CT_DoExecLog ALL mkdir -p "${CT_COMMON_SRC_DIR}"
 CT_DoExecLog ALL mkdir -p "${CT_SRC_DIR}"
 CT_DoExecLog ALL mkdir -p "${CT_BUILD_DIR}"
 CT_DoExecLog ALL mkdir -p "${CT_BUILDTOOLS_PREFIX_DIR}/bin"
@@ -298,9 +328,9 @@ if [ -z "${CT_RESTART}" ]; then
         CT_DEBUGROOT_DIR="${CT_PREFIX_DIR}/${CT_TARGET}/${CT_SYSROOT_DIR_PREFIX}/debug-root"
         CT_HEADERS_DIR="${CT_SYSROOT_DIR}/usr/include"
         CT_SanitizeVarDir CT_SYSROOT_DIR CT_DEBUGROOT_DIR CT_HEADERS_DIR
-        BINUTILS_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
-        CC_CORE_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
-        CC_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
+        CT_BINUTILS_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
+        CT_CC_CORE_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
+        CT_CC_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
         # glibc's prefix must be exactly /usr, else --with-sysroot'd gcc will get
         # confused when $sysroot/usr/include is not present.
         # Note: --prefix=/usr is magic!
@@ -314,11 +344,11 @@ if [ -z "${CT_RESTART}" ]; then
         # hack!  Always use --with-sysroot for binutils.
         # binutils 2.14 and later obey it, older binutils ignore it.
         # Lets you build a working 32->64 bit cross gcc
-        BINUTILS_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
+        CT_BINUTILS_SYSROOT_ARG="--with-sysroot=${CT_SYSROOT_DIR}"
         # Use --with-headers, else final gcc will define disable_glibc while
         # building libgcc, and you'll have no profiling
-        CC_CORE_SYSROOT_ARG="--without-headers"
-        CC_SYSROOT_ARG="--with-headers=${CT_HEADERS_DIR}"
+        CT_CC_CORE_SYSROOT_ARG="--without-headers"
+        CT_CC_SYSROOT_ARG="--with-headers=${CT_HEADERS_DIR}"
     fi
     CT_DoExecLog ALL mkdir -p "${CT_SYSROOT_DIR}"
     CT_DoExecLog ALL mkdir -p "${CT_DEBUGROOT_DIR}"
@@ -523,11 +553,6 @@ if [ -z "${CT_RESTART}" ]; then
     CT_DoLog DEBUG "CFLAGS for host compiler: '${CT_CFLAGS_FOR_HOST}'"
     CT_DoLog DEBUG "LDFLAGS for host compiler: '${CT_LDFLAGS_FOR_HOST}'"
 
-    # Set the shell to be used by ./configure scripts and by Makefiles (those
-    # that support it!).
-    export CONFIG_SHELL="${CT_CONFIG_SHELL}"    # for ./configure
-    export SHELL="${CT_CONFIG_SHELL}"           # for Makefiles
-
     # And help make go faster
     JOBSFLAGS=
     # Override the configured jobs with what's been given on the command line
@@ -595,9 +620,7 @@ if [ -z "${CT_RESTART}" ]; then
     CT_DoLog DEBUG "Other environment:"
     printenv |${grep} -v -E '^CT_.+=' |CT_DoLog DEBUG
     CT_EndStep
-fi
 
-if [ -z "${CT_RESTART}" ]; then
     CT_DoStep INFO "Retrieving needed toolchain components' tarballs"
     do_companion_tools_get
     do_kernel_get
@@ -645,7 +668,7 @@ if [ "${CT_ONLY_DOWNLOAD}" != "y" -a "${CT_ONLY_EXTRACT}" != "y" ]; then
         else
             CT_DoSaveState ${step}
             if [ ${do_stop} -eq 1 ]; then
-                CT_DoLog ERROR "Stopping just after step '${prev_step}', as requested."
+                CT_DoLog INFO "Stopping just after step '${prev_step}', as requested."
                 exit 0
             fi
         fi

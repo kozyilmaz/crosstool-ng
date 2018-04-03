@@ -65,10 +65,9 @@ AC_DEFUN(
 AC_DEFUN(
     [ACX_SET_KCONFIG_OPTION],
     [AS_IF(
-        [test -n "$$1"],
-        [kconfig_options="$kconfig_options has_$1=y"],
-        [kconfig_options="$kconfig_options has_$1"])
-    ])
+     [test -n "$$1"],
+     [AC_SUBST([KCONFIG_$1], ["def_bool y"])],
+     [AC_SUBST([KCONFIG_$1], ["bool"])])])
 
 # Check if a given program is available with a particular version.
 #   ACX_PROG_VERSION(VAR, HELP, PROG, SRCH, VERSION_CHECK[, CONFIG_OPT])
@@ -120,6 +119,22 @@ AC_DEFUN(
          [AC_MSG_ERROR([Required tool not found: $2])])
     ])
 
+# Check if install(1) supports --strip-program=...
+AC_DEFUN(
+    [ACX_INSTALL_STRIP_PROGRAM],
+    [touch conftest
+     mkdir conftest.dir
+     AC_MSG_CHECKING([if install takes --strip-program option])
+     AS_IF([$INSTALL --strip-program=true -s conftest conftest.dir/conftest 2>/dev/null],
+        [install_with_strip_program=y
+         AC_MSG_RESULT([yes])],
+        [AC_MSG_RESULT([no])])
+     ACX_SET_KCONFIG_OPTION([install_with_strip_program])
+     rm -rf conftest.dir
+     rm -f conftest
+    ])
+     
+
 #--------------------------------------------------------------------
 # Allow dummy --{en,dis}able-{static,shared}
 AC_ARG_ENABLE(
@@ -160,6 +175,7 @@ AC_ARG_PROGRAM
 ACX_WITH_DEPRECATED([install], [INSTALL])
 AC_ARG_VAR([INSTALL], [Specify the full path to a BSD-compatible install])
 AC_PROG_INSTALL
+ACX_INSTALL_STRIP_PROGRAM
 
 ACX_WITH_DEPRECATED([grep], [GREP])
 AC_ARG_VAR([GREP], [Specify the full path to GNU grep])
@@ -314,7 +330,7 @@ ACX_PROG_VERSION([LIBTOOLIZE],
 
 ACX_PROG_VERSION([AUTOCONF],
     [GNU autoconf >= 2.65],
-    [AUTOCONF],
+    [autoconf],
     [autoconf],
     ['\(GNU Autoconf\) ([3-9]\.|2\.[7-9][0-9]|2\.6[5-9])'],
     [autoconf_2_63_or_newer])
@@ -372,6 +388,8 @@ ACX_SET_KCONFIG_OPTION([svn])
 AC_CHECK_PROGS([git], [git])
 ACX_SET_KCONFIG_OPTION([git])
 
+AC_CHECK_PROGS([DPKG_BUILDFLAGS], [dpkg-buildflags])
+
 #--------------------------------------------------------------------
 # Now, for some fun...
 #--------------------------------------------------------------------
@@ -423,9 +441,13 @@ AC_SEARCH_LIBS(
 # Lastly, take care of crosstool-NG internal values
 #--------------------------------------------------------------------
 # Hey! We need the date! :-)
-AC_SUBST(
-    [DATE],
-    [$(date +%Y%m%d)])
+DATE_FMT="%Y%m%d"
+if test "x$SOURCE_DATE_EPOCH" = "x"; then
+    DATE=$(date "+$DATE_FMT")
+else
+    DATE="$(date -u -d "@$SOURCE_DATE_EPOCH" "+$DATE_FMT" 2>/dev/null || date -u -r "$SOURCE_DATE_EPOCH" "+$DATE_FMT" 2>/dev/null || date -u "+$DATE_FMT")"
+fi
+AC_SUBST([DATE])
 
 # Decorate the version string if needed
 AS_IF(
@@ -466,5 +488,5 @@ AS_IF(
 #--------------------------------------------------------------------
 # Finally, generate the output file(s)
 #--------------------------------------------------------------------
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile kconfig/Makefile config/configure.in])
 AC_OUTPUT
